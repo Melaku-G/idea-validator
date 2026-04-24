@@ -1,4 +1,16 @@
+import { auth } from "@clerk/nextjs/server";
+import { supabase } from "../../../lib/supabase";
+
 export async function POST(request) {
+  // Get the logged-in user's ID from Clerk
+  const { userId } = await auth();
+
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+    });
+  }
+
   const { idea } = await request.json();
 
   if (!idea || !idea.trim()) {
@@ -44,15 +56,30 @@ Be honest, specific, and practical. Base scores on real market dynamics.`;
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("OpenRouter error:", data);
       throw new Error(data.error?.message || "OpenRouter request failed");
     }
 
     const text = data.choices[0].message.content;
-
-    // Strip markdown code fences if the model adds them
     const clean = text.replace(/```json|```/g, "").trim();
     const report = JSON.parse(clean);
+
+    // Save the report to Supabase
+    const { error: dbError } = await supabase.from("reports").insert({
+      user_id: userId,
+      idea: idea,
+      market_size: report.scores.marketSize,
+      competition: report.scores.competition,
+      monetization: report.scores.monetization,
+      summary: report.summary,
+      strengths: report.strengths,
+      risks: report.risks,
+      recommendation: report.recommendation,
+    });
+
+    if (dbError) {
+      console.error("Supabase error:", dbError);
+      // Don't fail the request if saving fails — still return the report
+    }
 
     return new Response(JSON.stringify(report), {
       status: 200,
