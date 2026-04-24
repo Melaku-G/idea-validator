@@ -1,6 +1,11 @@
+// import { auth } from "@clerk/nextjs/server";
+// import { supabase } from "../../../lib/supabase";
 import { auth } from "@clerk/nextjs/server";
-import { supabase } from "../../../lib/supabase";
-
+import { createClient } from "@supabase/supabase-js";
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 export async function POST(request) {
   // Get the logged-in user's ID from Clerk
   const { userId } = await auth();
