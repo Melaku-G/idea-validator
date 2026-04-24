@@ -1,19 +1,42 @@
-// import { auth } from "@clerk/nextjs/server";
-// import { supabase } from "../../../lib/supabase";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
+
+const FREE_LIMIT = 3;
+
 export async function POST(request) {
-  // Get the logged-in user's ID from Clerk
   const { userId } = await auth();
 
   if (!userId) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
     });
+  }
+
+  // Check how many reports this user has already generated
+  const { count, error: countError } = await supabase
+    .from("reports")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  if (countError) {
+    console.error("Count error:", countError);
+  }
+
+  if (count >= FREE_LIMIT) {
+    return new Response(
+      JSON.stringify({
+        error: "limit_reached",
+        message: `You have used all ${FREE_LIMIT} free validations. Upgrade to Pro for unlimited access.`,
+        count,
+        limit: FREE_LIMIT,
+      }),
+      { status: 403 }
+    );
   }
 
   const { idea } = await request.json();
@@ -68,7 +91,7 @@ Be honest, specific, and practical. Base scores on real market dynamics.`;
     const clean = text.replace(/```json|```/g, "").trim();
     const report = JSON.parse(clean);
 
-    // Save the report to Supabase
+    // Save to Supabase
     const { error: dbError } = await supabase.from("reports").insert({
       user_id: userId,
       idea: idea,
@@ -82,14 +105,22 @@ Be honest, specific, and practical. Base scores on real market dynamics.`;
     });
 
     if (dbError) {
-      console.error("Supabase error:", dbError);
-      // Don't fail the request if saving fails — still return the report
+      console.error("Supabase error:", JSON.stringify(dbError));
+    } else {
+      console.log("Supabase save successful!");
     }
 
-    return new Response(JSON.stringify(report), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    // Return report with usage info
+    return new Response(
+      JSON.stringify({
+        ...report,
+        usage: { count: count + 1, limit: FREE_LIMIT },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     console.error("API error:", error.message || error);
     return new Response(
